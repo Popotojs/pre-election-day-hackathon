@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html" charset="UTF-8">
+    <title>Popoto Search</title>
+    <link rel="stylesheet" href="css/popoto.min.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="ppt-body">
+
+<header class="ppt-header">
+    <span class="ppt-header-span"><a href="http://www.popotojs.com">POPOTO JS</a> </span> - Pre-election day Hackathon
+</header>
+
+<section class="ppt-section-main">
+    <div class="ppt-section-header">
+        <span class="ppt-header-span">Graph</span> search
+    </div>
+
+    <div class="ppt-container-graph">
+        <nav id="popoto-taxonomy" class="ppt-taxo-nav">
+            <!-- Label/taxonomy filter will be generated here -->
+        </nav>
+        <div id="popoto-graph" class="ppt-div-graph">
+            <!-- Graph will be generated here-->
+        </div>
+    </div>
+
+    <div id="popoto-query" class="ppt-container-query">
+        <!-- Query viewer will be generated here -->
+    </div>
+
+    <div id="container-map" class="ppt-container-map disabled">
+        <nav id="year-selector" class="ppt-taxo-nav">
+            <h4>Select year:</h4>
+        </nav>
+        <div id="map" class="ppt-container-map">
+            <svg id="svg-map" width="600" height="760">
+            </svg>
+        </div>
+    </div>
+
+    <!-- Add a header with total number of results count -->
+    <div class="ppt-section-header">
+        <span id="results">RESULTS</span> <span id="rescount" class="ppt-count"></span>
+        <span style="float: right; font-size: 16px; font-weight: normal;">
+        <label><span id="reschooser">Displayed results:</span>
+            <select id="res-display">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+                <option value="2000" selected="selected">2000</option>
+            </select>
+        </label>
+        </span>
+    </div>
+
+    <div id="popoto-results" class="ppt-container-results">
+        <!-- Results will be generated here -->
+    </div>
+
+</section>
+
+<!---------------------->
+<!-- Required scripts -->
+
+<!-- Jquery is only used in popoto.js to send ajax POST request on Neo4j REST API -->
+<!-- This dependency will probably be removed in future releases -->
+<script src="js/jquery-2.1.0.min.js" charset="utf-8"></script>
+<script src="js/d3.v3.min.js" charset="utf-8"></script>
+<script src="js/popoto.min.js" charset="utf-8"></script>
+<script src="js/uk.electionmap.d3.js"></script>
+<script>
+    // Create the UK constituency map on svg-map div
+    // TODO: As the list of constituencies can differ from one year to another it would be better to generate it dynamically from database data. Today the list of constituencies is hard-coded in the JavaScript map code
+    var mapTiles = UK.ElectionMap()(d3.select("#svg-map"));
+
+    // Stores results per years data extracted from database.
+    var constituencyResults = {};
+
+    // Define the year of data to display.
+    var selectedYear;
+
+    // Get the list years of available Election data.
+    popoto.rest.post(
+            {
+                "statements": [
+                    {
+                        "statement": "match (election:Election) return DISTINCT election.year as year order by year descending"
+                    }
+                ]
+            })
+            .done(function (data) {
+                var years = [];
+                data.results[0].data.forEach(function (yearData) {
+                    var year = yearData.row[0];
+                    years.push(year);
+                    if (!selectedYear || selectedYear < year) { // Store greatest year as default selected year.
+                        selectedYear = year;
+                    }
+                    constituencyResults[year] = {};
+                });
+
+                // Add a clickable link for each year to select displayed data
+                d3.select("#year-selector")
+                        .selectAll(".year-selector")
+                        .data(years)
+                        .enter()
+                        .append("h4")
+                        .attr("class", "year-selector")
+                        .append("span")
+                        .attr("class", "year-span")
+                        .text(function (d) {
+                            return d;
+                        })
+                        .on("click", function (d) {
+                            // Change style of selected link and update all.
+                            d3.selectAll(".year-span").classed("selected", false);
+                            d3.select(this).classed("selected", true);
+                            selectedYear = d;
+
+                            popoto.result.hasChanged = true;
+                            popoto.update();
+                        });
+
+                // Change style of default selected year link
+                d3.select("#year-selector").selectAll(".year-span").filter(function (d) {
+                    return d == selectedYear
+                }).classed("selected", true);
+
+                fetchConstituencyResultData();
+            })
+            .fail(function (xhr, textStatus, errorThrown) {
+                console.error(xhr, textStatus, errorThrown);
+            });
+
+    /**
+     * Execute cypher queries to get election results for each available years in the database.
+     * Everything will be stored in "constituencyResults" variable.
+     *
+     * Also start popoto.js once all data is ready.
+     */
+    function fetchConstituencyResultData() {
+
+        var cypherStatements = [];
+
+        for (var year in constituencyResults) {
+            if (constituencyResults.hasOwnProperty(year)) {
+                cypherStatements.push(
+                        {
+                            "statement": "match (election:Election{year:" + year + "})-[s:SEAT]->(seat:Seat)-[candidate:CANDIDATE]->(person:Person)<-[representative:REPRESENTATIVE]-(party:Party),(seat)-[c:CONSTITUENCY]->(constituency:Constituency) return DISTINCT constituency.name as name, party.name as party, candidate.share as share, election.year as year order by name,share"
+                        });
+            }
+        }
+        if (cypherStatements.length > 0) {
+            popoto.rest.post(
+                    {
+                        "statements": cypherStatements
+                    })
+                    .done(function (data) {
+
+                        for (var i = 0; i < data.results.length; i++) {
+                            data.results[i].data.forEach(function (dataRow) {
+
+                                var constituencyName = dataRow.row[0];
+                                var year = dataRow.row[3];
+
+                                if (!constituencyResults[year][constituencyName]) {
+                                    constituencyResults[year][constituencyName] = [];
+                                }
+
+                                constituencyResults[year][constituencyName].push({"party": [dataRow.row[1]], "share": dataRow.row[2]});
+                            });
+
+                        }
+
+                        // Start popoto.js after results have been retrieved
+                        popoto.start("Constituency");
+                    })
+                    .fail(function (xhr, textStatus, errorThrown) {
+                        console.error(xhr, textStatus, errorThrown);
+                    });
+        }
+
+    }
+
+    // Store all the related code of the tooltip div displayed on map tiles hover.
+    var tooltipDiv = {
+        "svgWidth": 200,
+        "svgHeight": 200,
+        "data": function (resultdata) {
+            var data = [];
+            var shares = 0;
+            for (var i = 0; i < resultdata.length; i++) {
+                shares = shares + resultdata[i].share;
+                data.push(resultdata[i]);
+            }
+
+            if (shares < 100) {
+                data.push({
+                    "party": "Other",
+                    "share": Math.round((100 - shares) * 10) / 10
+                })
+            }
+
+            return data.sort(function (a, b) {
+                return b.share - a.share;
+            });
+        }
+    };
+
+    tooltipDiv.div = d3.select("body")
+            .append("div")
+            .attr("id", "tooltip")
+            .attr("class", "tooltip disabled");
+
+    tooltipDiv.title = tooltipDiv.div.append("h3").attr("id", "title");
+
+    tooltipDiv.arc = d3.svg.arc()
+            .outerRadius(Math.min(tooltipDiv.svgWidth, tooltipDiv.svgHeight) / 2)
+            .innerRadius(0);
+
+    tooltipDiv.pie = d3.layout.pie()
+            .value(function (d) {
+                return d.share;
+            })
+            .sort(null);// TODO sort in pie by descending value?
+
+    tooltipDiv.pieSVGElement = tooltipDiv.div.append("svg")
+            .attr("width", tooltipDiv.svgWidth)
+            .attr("height", tooltipDiv.svgHeight)
+            .append("g")
+            .attr("transform", "translate(" + tooltipDiv.svgWidth / 2 + "," + tooltipDiv.svgHeight / 2 + ")");
+
+    tooltipDiv.legend = tooltipDiv.div.append("div").attr("id", "legend").attr("class", "legend");
+
+    // Add mouseover event listener on each map tiles to display a tooltip with results details
+    mapTiles.on("mouseover", function (hoveredTileData) {
+
+        var hoveredConstituencyName = hoveredTileData[2];
+        // Clean all previous data in pie chart and legend
+        tooltipDiv.pieSVGElement.selectAll(".arc").data([]).exit().remove();
+        tooltipDiv.legend.selectAll(".legend-element").data([]).exit().remove();
+
+        if (d3.select(this).attr("result") == "true") { // only display tooltip div if tile contains data
+            // Set tooltip div visible
+            tooltipDiv.div.classed("disabled", false);
+
+            // Move it next to the mouse position
+            tooltipDiv.div.style("left", (d3.event.pageX + 50) + "px")
+                    .style("top", (d3.event.pageY - 30) + "px");
+
+            // Update title with constituency name
+            tooltipDiv.title.text(hoveredConstituencyName);
+
+            // Update content if data found
+            if (constituencyResults[selectedYear][hoveredConstituencyName] && constituencyResults[selectedYear][hoveredConstituencyName].length > 0) {
+
+                // Update pie chart
+                var g = tooltipDiv.pieSVGElement.selectAll(".arc")
+                        .data(tooltipDiv.pie(tooltipDiv.data(constituencyResults[selectedYear][hoveredConstituencyName])))
+                        .enter()
+                        .append("g")
+                        .attr("class", "arc");
+
+                g.append("path")
+                        .attr("d", tooltipDiv.arc)
+                        .style("fill", function (d) {
+                            return UK_POLITICAL_PARTY_COLOURS[d.data.party];
+                        });
+
+                // Update legend
+                var legendDiv = tooltipDiv.legend.selectAll(".legend-element")
+                        .data(tooltipDiv.data(constituencyResults[selectedYear][hoveredConstituencyName]))
+                        .enter().append("div")
+                        .attr("class", "legend-element");
+
+                legendDiv.append("div")
+                        .attr("class", "legend-color")
+                        .style("background-color", function (d) {
+                            return UK_POLITICAL_PARTY_COLOURS[d.party];
+                        })
+                        .html("&nbsp;");
+
+                legendDiv.append("span")
+                        .attr("class", "legend-span")
+                        .text(function (d) {
+                            return d.party + ": " + d.share + "%";
+                        });
+
+            }
+        }
+    });
+
+    // Hide tooltip div on mouseout
+    mapTiles.on("mouseout", function (d) {
+        tooltipDiv.div.classed("disabled", true);
+    });
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Popoto.js configuration:
+
+    // Change this property to your running Neo4j server or GrapheneDB instance.
+    popoto.rest.CYPHER_URL = "http://localhost:7474/db/data/transaction/commit";
+    // Add this property if your server requires basic HTTP authentication. If not just remove this line.
+    popoto.rest.AUTHORIZATION = "Basic " + btoa("neo4j:password");
+
+    popoto.query.RESULTS_PAGE_SIZE = 2000;
+    //    popoto.query.USE_RELATION_DIRECTION = false;
+    popoto.graph.WHEEL_ZOOM_ENABLED = false;
+
+    popoto.provider.nodeProviders = {
+        "Party": {
+            "returnAttributes": ["name", "tag"],
+            "constraintAttribute": "name",
+            "valueOrderByAttribute": "name",
+            "isValueOrderAscending": "true"
+        },
+        "Person": {
+            "returnAttributes": ["name"],
+            "constraintAttribute": "name",
+            "valueOrderByAttribute": "name",
+            "isValueOrderAscending": "true"
+        },
+        "Seat": {
+            "returnAttributes": ["name", "electorate", "turnout"],
+            "constraintAttribute": "name",
+            "valueOrderByAttribute": "name",
+            "isValueOrderAscending": "true",
+            "resultOrderByAttribute": "name"
+        },
+        "Election": {
+            "returnAttributes": ["name", "year"],
+            "constraintAttribute": "name",
+            "getTextValue": function (node) {
+                // Customized to display only the year on graph nodes
+                if (node.type === popoto.graph.node.NodeTypes.VALUE) {
+                    return node.attributes["name"].split(" ").pop();
+                } else {
+                    if (node.value === undefined) {
+                        return node.label;
+                    } else {
+                        return node.value.attributes["name"].split(" ").pop();
+                    }
+                }
+            }
+        },
+        "Constituency": {
+            "returnAttributes": ["name"],
+            "constraintAttribute": "name",
+            "valueOrderByAttribute": "name",
+            "isValueOrderAscending": "true",
+            "displayResults": function (pResultElmt) {
+                // Here D3.js mechanisms is used to generate HTML code.
+                // By default Popoto.js generates a <p> element for each result.
+                // pResultElmt parameter is the <p> element selected with D3.js
+                // Two elements are generated:
+
+                // An <h3> element containing the name
+                pResultElmt.append("h3")
+                        .text(function (result) {
+                            return result.attributes.name;
+                        });
+
+                // And a list of <li> elements with results for each year
+                for (var year in constituencyResults) {
+                    if (constituencyResults.hasOwnProperty(year)) {
+                        var resultElements = pResultElmt.filter(function (result) {
+                            return constituencyResults[year].hasOwnProperty(result.attributes.name);
+                        });
+
+                        resultElements.append("span").text("" + year + " results:");
+                        resultElements.append("ul")
+                                .selectAll("li")
+                                .data(function (d) {
+                                    return tooltipDiv.data(tooltipDiv.data(constituencyResults[year][d.attributes.name]))
+                                }).enter().append("li")
+                                .text(function (d) {
+                                    return d.party + ": " + d.share + "%";
+                                });
+                    }
+                }
+            }
+        },
+        "Country": {
+            "returnAttributes": ["name"],
+            "constraintAttribute": "name",
+            "valueOrderByAttribute": "name",
+            "isValueOrderAscending": "true"
+        }
+    };
+
+    // Add listener on combo box with number of results
+    d3.select("#res-display").on("change", function () {
+        popoto.query.RESULTS_PAGE_SIZE = this.options[this.selectedIndex].value;
+        popoto.result.hasChanged = true;
+        popoto.update();
+    });
+
+    // Add a listener on returned result count to update count in page
+    popoto.result.onTotalResultCount(function (count) {
+        d3.select("#rescount").text(function (d) {
+            return "(" + count + ")";
+        })
+    });
+
+    /**
+     * Add a listener on result received to update map.
+     */
+    popoto.result.onResultReceived(
+            function (resultObjects) {
+                if (resultObjects.length > 0 && resultObjects[0].label == "Constituency") {
+                    d3.select("#container-map").classed("disabled", false);
+
+                    // Reset all constituency colors
+                    d3.select("#svg-map").selectAll(".constituency").attr("fill", "#22252A").attr("result", "false");
+
+                    var constituencyNames = [];
+
+                    for (var i = 0; i < resultObjects.length; i++) {
+                        constituencyNames.push(resultObjects[i].attributes.name);
+                    }
+
+                    d3.select("#svg-map").selectAll(".constituency").filter(function (d) {
+                        return constituencyNames.indexOf(d[2]) > -1 // If constituency name is found in map the tile color is updated using party winner color.
+                    })
+                            .attr("fill", function (d) {
+                                var mapConstituency = d[2];
+
+                                if (constituencyResults[selectedYear].hasOwnProperty(mapConstituency)) {
+
+                                    var localResults = constituencyResults[selectedYear][mapConstituency];
+
+                                    var partyWinner;
+                                    var partyShare = 0;
+
+                                    for (var i = 0; i < localResults.length; i++) {
+                                        if (localResults[i].share > partyShare) {
+                                            partyWinner = localResults[i].party;
+                                            partyShare = localResults[i].share;
+                                        }
+                                    }
+
+                                    return UK_POLITICAL_PARTY_COLOURS[partyWinner];
+                                } else {
+                                    return "#444951"; // Unknown constituency (due to hardcoded names in map)
+                                }
+                            })
+                            .attr("result", "true");
+                } else {
+                    d3.select("#container-map").classed("disabled", true);
+                }
+            }
+    );
+
+    var UK_POLITICAL_PARTY_COLOURS = {
+        "Plaid Cymru": "#006600",
+        "Labour Party": "#CC0000",
+        "Green Party": "#339900",
+        "Conservative Party": "#333399",
+        "Liberal Democrats": "#FF9900",
+        "Scottish National Party": "#FFCC00",
+        "UK Independence Party": "#996699",
+        "British National Party": "#0000CC",
+        "Ulster Unionist Party": "#FFCC00",
+        "Sinn Féin": "#003300",
+        "Social Democratic and Labour Party": "#669966",
+        "Democratic Unionist Party": "#CC3300",
+        "Other": "#22252a"
+    };
+
+</script>
+
+</body>
+</html>

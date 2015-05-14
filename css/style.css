@@ -1,0 +1,103 @@
+select {
+    color: #fff;
+    border-radius: 5px;
+    background: #8bb71a;
+    border: 0;
+    margin: 20px;
+    overflow: hidden;
+    padding: 5px 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    width: 150px;
+    outline: none;
+}
+
+.select-boxes {
+    float: right;
+    font-size: 16px;
+    font-weight: normal;
+}
+
+a {
+    color: #8bb71a;
+}
+
+.ppt-container-map {
+    background-color: #22252a;
+    margin-top: 22px;
+    padding: 0;
+    border-bottom-right-radius: 5px 5px;
+    border-bottom-left-radius: 5px 5px;
+    overflow: hidden;
+    text-align: center;
+}
+
+.ppt-container-graph {
+    background-color: #22252a;
+    height: 450px;
+    padding: 0;
+    border-bottom-right-radius: 5px 5px;
+    border-bottom-left-radius: 5px 5px;
+    overflow: hidden;
+}
+
+.ppt-container-map {
+    background-color: #22252a;
+    padding: 0;
+    border-bottom-right-radius: 5px 5px;
+    border-bottom-left-radius: 5px 5px;
+    overflow: hidden;
+}
+
+.constituency:hover {
+    fill-opacity: 0.4;
+}
+
+div.tooltip {
+    position: absolute;
+    text-align: center;
+    width: 300px;
+    padding: 20px;
+    font: 12px sans-serif;
+    background: #737984;
+    opacity: 0.9;
+    border: 0;
+    border-radius: 8px;
+}
+
+.disabled {
+    display: none;
+}
+
+.legend-color {
+    width: 20px;
+    height: 20px;
+    float: left;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.legend {
+    text-align: left;
+}
+
+.legend-span {
+    margin-left: 10px;
+}
+
+.legend-element {
+    margin-top: 20px;
+    line-height: 20px;
+}
+
+.year-selector {
+    color: #8bb71a;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.year-span.selected {
+    color: yellow;
+    text-decoration: underline;
+    font-weight: bold;
+}
