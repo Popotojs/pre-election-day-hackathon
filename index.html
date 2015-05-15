@@ -76,6 +76,11 @@
 <script src="js/popoto.min.js" charset="utf-8"></script>
 <script src="js/uk.electionmap.d3.js"></script>
 <script>
+    // Change this property to your running Neo4j server or GrapheneDB instance.
+    popoto.rest.CYPHER_URL = "http://localhost:7474/db/data/transaction/commit";
+    // Add this property if your server requires basic HTTP authentication. If not just remove this line.
+    popoto.rest.AUTHORIZATION = "Basic " + btoa("neo4j:password");
+
     // Create the UK constituency map on svg-map div
     // TODO: As the list of constituencies can differ from one year to another it would be better to generate it dynamically from database data. Today the list of constituencies is hard-coded in the JavaScript map code
     var mapTiles = UK.ElectionMap()(d3.select("#svg-map"));
@@ -304,11 +309,6 @@
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
     // Popoto.js configuration:
-
-    // Change this property to your running Neo4j server or GrapheneDB instance.
-    popoto.rest.CYPHER_URL = "http://localhost:7474/db/data/transaction/commit";
-    // Add this property if your server requires basic HTTP authentication. If not just remove this line.
-    popoto.rest.AUTHORIZATION = "Basic " + btoa("neo4j:password");
 
     popoto.query.RESULTS_PAGE_SIZE = 2000;
     //    popoto.query.USE_RELATION_DIRECTION = false;
